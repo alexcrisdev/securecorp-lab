@@ -24,7 +24,7 @@ Red de mi casa (para no repetirla): 192.168.1.0/24
 | Equipo    | Rol                       | IP       | Tipo (fija / DHCP) |
 |-----------|---------------------------|----------|--------------------|
 | DC01      | AD DS, DNS, DHCP          | 10.0.10.10         | fija     |
-| CLIENTE01 | Equipo de usuario         | 10.0.10.100–.199   | DHCP     |
+| CLIENTE01 | Equipo de usuario         | 10.0.10.50 (fija provisional hasta la semana 3)   | DHCP     |
 | pfSense   | Firewall / gateway (Nivel 2) | 10.0.10.1| fija |
 | UBUNTU01  | Linux + Zabbix (Nivel 2-3)| 10.0.10.20         | fija     |
 
