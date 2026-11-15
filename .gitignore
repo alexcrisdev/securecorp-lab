@@ -1,0 +1,39 @@
+# ===== SecureCorp-Lab · .gitignore =====
+# Archivos que NUNCA deben subirse al repositorio público.
+
+# --- Secretos y credenciales ---
+.env
+*.env
+*.key
+*.pem
+*.pfx
+*.p12
+*.kdbx
+*credencial*
+*password*
+*contrasena*
+secrets/
+
+# --- Máquinas virtuales e imágenes (pesadas y sin valor en Git) ---
+*.iso
+*.vhd
+*.vhdx
+*.avhdx
+*.vmcx
+*.vmgs
+*.vmrs
+*.bin
+
+# --- Backups ---
+*.bak
+backups/
+
+# --- Basura de Windows y Office ---
+Thumbs.db
+desktop.ini
+~$*
+*.tmp
+
+# --- Editores ---
+.vscode/
+.idea/
