@@ -244,6 +244,93 @@ Con otras redes se nota la inversión: `10.0.20.0/24` → `20.0.10.in-addr.arpa`
 
 ---
 
+## Zonas DNS: repaso
+
+### ¿Qué es una zona?
+
+🟢 **En simple:** el DNS de todo internet es una **biblioteca gigante de guías telefónicas**. Nadie tiene la biblioteca completa: cada organización es dueña de **sus propios cuadernos**. Una **zona** es uno de esos cuadernos, y el servidor que es su dueño tiene la palabra final sobre lo que dice.
+
+🔵 **En técnico:** una zona es una porción del espacio de nombres DNS administrada por un servidor **autoritativo** para ella: sus respuestas son oficiales, no copiadas de otro servidor.
+
+Por eso `8.8.8.8` no sabe nada de SecureCorp: el cuaderno `ad.securecorp.com` solo existe en DC01.
+
+### Directa vs. inversa
+
+| | **Zona directa** | **Zona inversa** |
+|---|---|---|
+| 🟢 En simple | "Tengo el **nombre**, ¿cuál es su número?" | "Tengo un **número**, ¿de quién es?" |
+| 🔵 En técnico | Nombre → IP | IP → nombre |
+| Registro principal | **A** (y también SRV, CNAME) | **PTR** |
+| ¿Quién la usa? | Todos, todo el tiempo, para conectarse | Diagnóstico, registros de seguridad, auditorías |
+| ¿Obligatoria para AD? | ✅ Sí: contiene los registros SRV | ❌ No, pero es **buena práctica** |
+| ¿Quién la crea? | La promoción, automáticamente | **Yo, a mano**, una por cada subred, porque solo yo conozco mis redes |
+
+**Para qué sirve la zona inversa:**
+- **Diagnóstico:** sin ella, `nslookup` muestra `Server: UnKnown` y tarda (*timeouts*). Lo vi en vivo el 15/11/2026, y desapareció al crearla.
+- **Seguridad:** si un log dice *"intentos fallidos desde 10.0.20.137"*, la zona inversa dice **qué equipo es**. Clave para el Nivel 3 (evento 4625).
+- **Aplicaciones** que verifican que nombre e IP coincidan en ambas direcciones.
+
+### ⚠️ Una zona inversa por cada red
+
+| Red | Zona inversa | Estado |
+|---|---|---|
+| `10.0.10.0/24` SERVIDORES | `10.0.10.in-addr.arpa` (palíndromo) | ✅ Creada |
+| `10.0.20.0/24` USUARIOS | `20.0.10.in-addr.arpa` | Nivel 2 |
+| `10.0.30.0/24` ADMIN | `30.0.10.in-addr.arpa` | Nivel 2 |
+| `10.0.40.0/24` INVITADOS | `40.0.10.in-addr.arpa` | Nivel 2 (si se decide registrarlos) |
+
+> **Lista de verificación para una subred nueva:** ámbito DHCP + zona inversa + reglas de firewall + documentación del plan IP.
+
+### Zonas que tiene hoy DC01
+
+| Zona | Tipo | Creada por | Qué guarda |
+|---|---|---|---|
+| `ad.securecorp.com` | Directa | La promoción | Registros A de los equipos y SRV del dominio |
+| `_msdcs.ad.securecorp.com` | Directa | La promoción | SRV que ubican a los DCs de **todo el bosque** (la que consulta `nslookup -type=SRV _ldap._tcp.dc._msdcs…`) |
+| `10.0.10.in-addr.arpa` | Inversa | Yo | PTR de DC01 y de los equipos que se registren |
+
+### Registros vistos en la consola DNS
+
+| Registro | 🟢 En simple | 🔵 En técnico |
+|---|---|---|
+| **SOA** | La **portada del cuaderno**: quién es el dueño y en qué versión va | *Start of Authority*: servidor principal de la zona y número de serie, que aumenta con cada cambio |
+| **NS** | "Las recepcionistas oficiales de este cuaderno son…" | *Name Server*: servidores DNS autoritativos para la zona |
+| **PTR** | El renglón número → nombre | Puntero de IP a nombre |
+
+### ¿Qué significa "guardar la zona en Active Directory"?
+
+No significa que la zona sea parte del dominio: indica **dónde y cómo se guarda el cuaderno**.
+
+| | **Zona estándar** (archivo) | **Zona integrada en AD** ✅ |
+|---|---|---|
+| 🟢 En simple | Un **papel suelto en el escritorio** de la recepcionista | El cuaderno guardado **dentro de la caja fuerte** de AD |
+| Dónde vive | Archivo de texto en `C:\Windows\System32\dns\` | Dentro de la base de datos de AD |
+| Copias en otros servidores | Solo el **principal** escribe; los **secundarios** tienen fotocopias que se actualizan por **transferencia de zona** | Se replica con AD. **Multimaestro:** cualquier DC puede escribir. |
+| Si cae el servidor principal | No se pueden hacer cambios | Otro DC sigue funcionando y editando |
+| Quién actualiza registros | Cualquiera, o nadie | Solo equipos del dominio autenticados (**actualizaciones dinámicas seguras**) |
+
+**Las 3 ventajas:**
+1. **Se replica sola:** cuando llegue DC02, recibirá la zona automáticamente con AD, sin configurar transferencias de zona.
+2. **Tolerancia a fallos:** cualquier DC puede seguir respondiendo **y editando** la zona.
+3. **Seguridad:** las actualizaciones dinámicas seguras exigen Kerberos e impiden que un atacante registre `dc01` apuntando a su máquina (**DNS spoofing**).
+
+🔐 Como la zona vive dentro de AD, proteger los DCs protege el DNS. Y si alguien compromete AD, también controla el DNS. Otro motivo para que los DCs sean **Tier 0**.
+
+🎤 **En entrevista:** "Una zona es la parte del espacio DNS de la que un servidor es autoritativo. La directa resuelve nombres a IPs y es obligatoria para AD porque contiene los SRV; la crea la promoción. La inversa resuelve IPs a nombres, se crea a mano por cada subred y es clave para diagnóstico y auditoría. Las integro en AD porque se replican con AD, son multimaestro y permiten actualizaciones dinámicas seguras."
+
+### Preguntas de repaso
+
+**1. "La zona inversa es obligatoria; sin ella el dominio no funciona." ¿Es cierto?**
+No. AD solo necesita la zona directa, donde están los registros SRV. La inversa es buena práctica, sobre todo para seguridad y diagnóstico.
+
+**2. ¿Qué ventaja habrá con DC02 gracias a que la zona está integrada en AD?**
+DC02 recibirá la zona automáticamente como parte de la replicación de AD, sin configurar transferencias de zona. Y como es multimaestro, también podrá modificarla.
+
+**3. Un log dice "10 intentos fallidos desde 10.0.20.137". ¿Qué zona y qué registro dicen de qué equipo se trata?**
+El registro **PTR** de esa IP, en la zona inversa de su subred: **`20.0.10.in-addr.arpa`** (red USUARIOS). ⚠️ No es `10.0.10.in-addr.arpa`: hay una zona inversa por cada red, y la de servidores solo parece "sin invertir" porque `10.0.10` es un palíndromo.
+
+---
+
 ## 4. Servidor DNS vs. reenviador (⚠️ repasar)
 
 🟢 **En simple:**
