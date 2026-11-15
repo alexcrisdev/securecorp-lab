@@ -24,7 +24,7 @@ Cada nivel parte de una necesidad del negocio y se diseña con mínimo privilegi
 | Host | Intel Core i5-11400 · 32 GB RAM · NVMe para VMs |
 | Servidores | Windows Server 2025 (evaluación) · Ubuntu Server 26.04 (Nivel 2) |
 | Clientes | Windows 11 Enterprise (evaluación) |
-| Red | `10.0.0.0/16` dividida en zonas `/24`  |
+| Red | `10.0.0.0/16` dividida en zonas `/24` · [ver plan IP](nivel-1/plan-ip.md)  |
 
 ## Autor
 
@@ -33,4 +33,4 @@ Cada nivel parte de una necesidad del negocio y se diseña con mínimo privilegi
 Me oriento a infraestructura Microsoft híbrida con enfoque en seguridad, sobre todo
 en identidades y accesos. Preparando AZ-900.
 
-[LinkedIn](www.linkedin.com/in/alexander-crisostomo) · [GitHub](https://github.com/alexcrisdev)
+[LinkedIn](https://www.linkedin.com/in/alexander-crisostomo) · [GitHub](https://github.com/alexcrisdev)
