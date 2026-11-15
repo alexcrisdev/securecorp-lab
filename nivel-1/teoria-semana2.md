@@ -53,6 +53,151 @@ Cada concepto tiene tres niveles:
 
 ---
 
+## DNS desde cero (repaso fundamental)
+
+### IP: quién soy
+
+🟢 **En simple:** la IP es el **número de teléfono** de cada equipo. Para hablar con alguien en la red, siempre necesitas su número: los equipos se comunican por números, no por nombres.
+
+🔵 **En técnico:** la dirección IP es una **dirección lógica** que identifica a un equipo dentro de una red. Los paquetes la usan para saber de dónde vienen y a dónde van.
+
+### DNS: la agenda de contactos
+
+🟢 **En simple:** las personas no recuerdan números. Buscas "Mamá" en la **agenda del celular** y el teléfono marca el número por ti. **El DNS es esa agenda**: escribes `dc01` y te da `10.0.10.10`.
+
+🔵 **En técnico:** el DNS (*Domain Name System*) traduce **nombres a IPs** (zona directa) y **IPs a nombres** (zona inversa).
+
+¿Para qué sirve, además de la comodidad?
+1. **Las IPs pueden cambiar; los nombres no.** Si un servidor cambia de IP, se actualiza la agenda y todos lo siguen encontrando por su nombre.
+2. **Active Directory depende de nombres.** Los equipos ubican al DC con registros **SRV**, y **Kerberos funciona con nombres**. Si accedes por IP, Windows suele usar **NTLM**, que es menos seguro.
+
+### Ejemplo completo: María abre `\\dc01\contabilidad`
+
+```
+1. CLIENTE01: "¿Cuál es el número de dc01?"   → consulta al DNS (DC01)
+2. DNS:       "dc01 es 10.0.10.10"           → responde desde su zona
+3. CLIENTE01: se conecta a 10.0.10.10         → usa la IP para comunicarse
+4. DC01:      pide el ticket de Kerberos y abre la carpeta
+```
+
+**El DNS da el número. La IP es la que se usa para hablar.**
+
+### ⭐ Los dos campos de la tarjeta de red
+
+> **IP address = quién soy. DNS server = a quién le pregunto.**
+
+| Campo | Pregunta que responde | 🟢 En simple |
+|---|---|---|
+| **IP address** | ¿Cuál es **mi** número? | Mi número de celular |
+| **DNS server** | ¿A **quién** le pregunto cuando necesito un número? | El número de la **operadora de información** |
+
+⚠️ El campo DNS **no traduce nada**: solo guarda la dirección del servidor que traduce.
+
+| | CLIENTE01 (María) | DC01 (la recepcionista) |
+|---|---|---|
+| **IP address** | `10.0.10.100` | `10.0.10.10` |
+| **DNS server** | `10.0.10.10` → pregunta a DC01 | `10.0.10.10` → **se pregunta a sí mismo** |
+
+**¿Por qué en DC01 coinciden?** Porque DC01 también se comporta como **servidor DNS**: cuando necesita buscar un nombre, se consulta a sí mismo, porque es el único que tiene la zona `ad.securecorp.com`. Además, DC01 **también es cliente** de su propio dominio: necesita encontrar sus propios registros SRV y registrar su nombre.
+
+🎤 **En entrevista:** "La IP identifica a cada equipo; el DNS traduce nombres a IPs. En un dominio, todos los equipos, incluido el propio DC, usan al controlador de dominio como DNS, porque es el único que tiene la zona del dominio y los registros SRV. En el DC, el DNS preferido es su propia IP (u otro DC) y el loopback va como alternativo."
+
+### `10.0.10.10` vs. `127.0.0.1`
+
+| Dirección | 🟢 En simple | 🔵 En técnico |
+|---|---|---|
+| `10.0.10.10` | Su número **real**, el que conoce toda la red | IP asignada a la tarjeta de red |
+| `127.0.0.1` | Decir **"yo"**: siempre apunta a uno mismo, sea cual sea su número | Dirección de **loopback**. Siempre apunta al propio equipo, sin depender de la IP configurada. |
+
+Regla de Microsoft: en un DC, **primero la IP real** (o la de otro DC) y **el loopback como alternativo**, nunca primero. Con dos DCs, cada uno pregunta primero al otro y después a sí mismo.
+
+### Caso práctico: ¿qué pasa si DC01 cambia su IP a `10.0.10.15`?
+
+| Quién | Qué pasa |
+|---|---|
+| Usuarios que entran por **IP** (`\\10.0.10.10\...`) | ❌ Se rompe. Hay que corregir a mano cada acceso directo y script. |
+| Usuarios que entran por **nombre** (`\\dc01\...`) | ✅ DC01 actualiza solo su registro A (actualización dinámica). **Pero** los clientes siguen preguntando al DNS viejo (`10.0.10.10`), así que hay que actualizarles el campo DNS. Se hace una vez desde el **DHCP**. |
+| **DC01 mismo** | *(Observación propia, 15/11/2026)* Al cambiar la IP, **su campo DNS preferido sigue diciendo `10.0.10.10`**: los dos campos son independientes. Lo salva el alternativo **`127.0.0.1`**, que siempre apunta a sí mismo. **Por eso existe el loopback como alternativo.** |
+
+Procedimiento correcto si un DC cambia de IP:
+1. Cambiar la IP address.
+2. Cambiar también su DNS preferido a la nueva IP.
+3. `ipconfig /registerdns` para actualizar sus registros A y PTR.
+4. Actualizar el DNS de los clientes desde el DHCP.
+5. Revisar todo lo que use la IP a mano: accesos directos, scripts, reglas de firewall.
+
+**Conclusión:** un controlador de dominio **no se cambia de IP** salvo que no quede más remedio. Por eso se planifica fija desde el día 1.
+
+### ¿En qué orden busca Windows un nombre?
+
+🟢 **En simple:** antes de llamar a la operadora, revisas primero tu memoria reciente y luego tu libreta personal.
+
+| Orden | Dónde busca | 🔵 En técnico |
+|---|---|---|
+| 1 | Memoria reciente | **Caché DNS** del equipo (respuestas recientes, guardadas durante su TTL) |
+| 2 | Libreta personal | Archivo **hosts**: `C:\Windows\System32\drivers\etc\hosts` |
+| 3 | La operadora | El **servidor DNS** configurado en la tarjeta de red |
+
+🔐 **Dato de seguridad:** el malware a veces **modifica el archivo hosts** para redirigir nombres legítimos (por ejemplo, el de un banco) hacia servidores falsos. Si un equipo "resuelve raro", revisa el archivo hosts y la caché.
+
+### Comandos útiles de DNS
+
+**Ver la configuración**
+
+| Comando | Para qué sirve |
+|---|---|
+| `ipconfig /all` | Ver IP, máscara, gateway y **servidores DNS** configurados |
+| `Get-DnsClientServerAddress` | Ver los DNS de cada tarjeta (PowerShell) |
+
+**Consultar nombres**
+
+| Comando | Para qué sirve |
+|---|---|
+| `nslookup dc01` | Resolver un nombre a IP (zona directa) |
+| `nslookup 10.0.10.10` | Resolver una IP a nombre (zona inversa, PTR) |
+| `nslookup -type=SRV _ldap._tcp.dc._msdcs.ad.securecorp.com` | Encontrar los controladores de dominio (registros SRV) |
+| `nslookup google.com 8.8.8.8` | Preguntar a **otro servidor DNS** en concreto (útil para comparar) |
+| `Resolve-DnsName dc01` | Equivalente moderno en PowerShell; devuelve objetos |
+| `Resolve-DnsName _ldap._tcp.dc._msdcs.ad.securecorp.com -Type SRV` | SRV con PowerShell |
+
+**Caché y registro**
+
+| Comando | Para qué sirve |
+|---|---|
+| `ipconfig /displaydns` | Ver la caché DNS del equipo |
+| `ipconfig /flushdns` | Borrar la caché (cuando un registro cambió y el equipo sigue usando el viejo) |
+| `Clear-DnsClientCache` | Lo mismo, en PowerShell |
+| `ipconfig /registerdns` | Pedir al equipo que vuelva a registrar su nombre (A y PTR) en el DNS |
+
+**Diagnóstico**
+
+| Comando | Para qué sirve |
+|---|---|
+| `dcdiag /test:dns` | Chequeo completo del DNS de un controlador de dominio |
+| `Test-NetConnection dc01 -Port 389` | Comprobar que un nombre resuelve **y** que el puerto responde (LDAP) |
+| `Test-NetConnection dc01 -Port 88` | Lo mismo para Kerberos |
+| `dnsmgmt.msc` | Abrir la consola gráfica de DNS |
+
+### Cómo leer la salida de `nslookup`
+
+| Mensaje | 🟢 En simple | 🔵 Qué significa |
+|---|---|---|
+| `Server: UnKnown` | La operadora no se presentó con su nombre | No hay registro **PTR** para la IP del servidor DNS (falta la zona inversa). La consulta puede funcionar igual. |
+| `Non-authoritative answer` | "Te lo dice alguien que lo leyó en otra agenda" | La respuesta viene de la **caché** o de un reenviador, no del dueño de la zona. Es normal para nombres de internet. |
+| `Non-existent domain` (**NXDOMAIN**) | "Ese contacto no existe en la agenda" | El nombre no existe en esa zona, o le preguntaste al DNS equivocado (la trampa del 8.8.8.8) |
+| `DNS request timed out` | La operadora no contesta | El servidor DNS no responde: está apagado, no es accesible o hay un firewall |
+
+### Lista de diagnóstico: "no puedo acceder por nombre"
+
+1. `ipconfig /all`: ¿el DNS configurado es el DC? ¿La IP es `169.254.x.x`? (Si lo es, el problema es DHCP, no DNS.)
+2. `ping 10.0.10.10`: ¿hay conectividad con el DNS?
+3. `nslookup <nombre>`: ¿resuelve? ¿Qué mensaje da?
+4. `ipconfig /flushdns` y repetir, por si era una respuesta vieja en caché.
+5. Revisar el archivo **hosts**.
+6. En el DC: `dcdiag /test:dns` y la consola `dnsmgmt.msc`.
+
+---
+
 ## 3. DNS en Active Directory
 
 🟢 **En simple:** DNS es la **guía telefónica** de la red. Tú sabes el nombre ("dc01") y la guía te da el número (la IP). Sin guía, nadie encuentra a nadie.
