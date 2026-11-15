@@ -211,7 +211,18 @@ Procedimiento correcto si un DC cambia de IP:
 | **Directa** | Buscar el número sabiendo el nombre | Nombre → IP | **A** (IPv4), **AAAA** (IPv6). También viven aquí **SRV** y **CNAME**. |
 | **Inversa** | Buscar el nombre sabiendo el número | IP → nombre | **PTR** |
 
-La zona inversa de `10.0.10.0/24` se llama `10.10.0.10.in-addr.arpa`: los octetos de la red van **al revés**.
+**Cómo se nombra la zona inversa:** se toman solo los octetos de la **red** y se escriben **al revés**, seguidos de `.in-addr.arpa`.
+
+| Qué es | Cómo se forma | Ejemplo |
+|---|---|---|
+| **Zona inversa** (la red completa) | Octetos de la red, al revés | `10.0.10.0/24` → **`10.0.10.in-addr.arpa`** (`10.0.10` es un palíndromo: al revés se lee igual) |
+| **Registro PTR** (un equipo) | Los 4 octetos de la IP, al revés | DC01 (`10.0.10.10`) → **`10.10.0.10.in-addr.arpa`** |
+
+Con otras redes se nota la inversión: `10.0.20.0/24` → `20.0.10.in-addr.arpa` · `192.168.1.0/24` → `1.168.192.in-addr.arpa`.
+
+🔵 **¿Por qué al revés?** El DNS lee de derecha a izquierda, de lo general a lo específico (`.com` → `securecorp` → `ad`). En una IP lo general (la red) está a la izquierda. Al invertirla, queda organizada igual que los nombres.
+
+> *Corrección (15/11/2026): en una versión anterior de esta nota decía que la zona se llamaba `10.10.0.10.in-addr.arpa`. Ese es el nombre del PTR de DC01, no el de la zona. El asistente de DNS generó el nombre correcto.*
 
 ### Registros
 
